@@ -8,6 +8,21 @@
 > 4. 新增 **“统一当日过滤&知行约束”** 说明章节。
 
 ---
+    python fetch_kline.py \
+  --start 20250101 \
+  --end today \
+  --stocklist ./stocklist.csv \
+  --exclude-boards gem star bj \
+  --out ./data \
+  --workers 6
+
+
+  python select_stock.py \
+  --data-dir ./data \
+  --config ./configs.json
+
+
+---
 
 ## 目录
 
@@ -330,3 +345,7 @@ python select_stock.py \
 * 本仓库仅供学习与技术研究之用，**不构成任何投资建议**。股市有风险，入市需谨慎。
 * 数据来源与接口可能随平台策略调整而变化，请合法合规使用。
 * 致谢 **@Zettaranc** 在 Bilibili 的无私分享：[https://b23.tv/JxIOaNE](https://b23.tv/JxIOaNE)
+
+
+
+

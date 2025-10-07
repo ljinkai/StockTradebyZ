@@ -3,7 +3,7 @@
     {
       "class": "BBIKDJSelector",
       "alias": "少妇战法",
-      "activate": true,
+      "activate": false,
       "params": {
         "j_threshold": 15,
         "bbi_min_window": 20,
@@ -16,7 +16,7 @@
     {
       "class": "SuperB1Selector",
       "alias": "SuperB1战法",
-      "activate": true,
+      "activate": false,
       "params": {
         "lookback_n": 10,
         "close_vol_pct": 0.02,
@@ -36,7 +36,7 @@
     {
       "class": "BBIShortLongSelector",
       "alias": "补票战法",
-      "activate": true,
+      "activate": false,
       "params": {
         "n_short": 5,
         "n_long": 21,
@@ -51,7 +51,7 @@
     {
       "class": "PeakKDJSelector",        
       "alias": "填坑战法",
-      "activate": true,                 
+      "activate": false,                 
       "params": {
         "j_threshold": 10,                 
         "max_window": 120,                
@@ -63,7 +63,7 @@
     {
       "class": "MA60CrossVolumeWaveSelector",
       "alias": "上穿60放量战法",
-      "activate": true,
+      "activate": false,
       "params": {
         "lookback_n": 25,
         "vol_multiple": 1.8,
@@ -71,6 +71,21 @@
         "j_q_threshold": 0.10,
         "ma60_slope_days": 5,
         "max_window": 120        
+      }
+    },
+    {
+      "class": "PatternSimilaritySelector",
+      "alias": "形体相似选股",
+      "activate": true,
+      "params": {
+        "reference_code": "600095",
+        "window": 30,
+        "min_corr": 0.30,
+        "use_candle_shape": true,
+        "require_zx_today": false,
+        "also_filter_day": false,
+        "reference_start": "2025-07-02",
+        "reference_end": "2025-09-22"
       }
     }
   ]

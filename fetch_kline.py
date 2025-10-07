@@ -122,8 +122,8 @@ def _filter_by_boards_stocklist(df: pd.DataFrame, exclude_boards: set[str]) -> p
     ts_code = df["ts_code"].astype(str).str.upper()
     mask = pd.Series(True, index=df.index)
 
-    if "gem" in exclude_boards:
-        mask &= ~code.str.startswith(("300", "301"))
+    # if "gem" in exclude_boards:
+    #     mask &= ~code.str.startswith(("300", "301"))
     if "star" in exclude_boards:
         mask &= ~code.str.startswith(("688",))
     if "bj" in exclude_boards:
@@ -182,7 +182,7 @@ def main():
         nargs="*",
         default=[],
         choices=["gem", "star", "bj"],
-        help="排除板块，可多选：gem(创业板300/301) star(科创板688) bj(北交所.BJ/4/8)"
+        help="排除板块，可多选： star(科创板688) bj(北交所.BJ/4/8)"
     )
     # 其它
     parser.add_argument("--out", default="./data", help="输出目录")

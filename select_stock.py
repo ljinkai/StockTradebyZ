@@ -133,7 +133,16 @@ def main():
         logger.info("============== 选股结果 [%s] ==============", alias)
         logger.info("交易日: %s", trade_date.date())
         logger.info("符合条件股票数: %d", len(picks))
-        logger.info("%s", ", ".join(picks) if picks else "无符合条件股票")
+        # 若选择器提供相似度分数，则打印分数
+        if hasattr(selector, "last_scores") and isinstance(getattr(selector, "last_scores"), dict):
+            scores = getattr(selector, "last_scores")
+            if picks:
+                detailed = [f"{code}({scores.get(code, float('nan')):.4f})" for code in picks]
+                logger.info("%s", ", ".join(detailed))
+            else:
+                logger.info("无符合条件股票")
+        else:
+            logger.info("%s", ", ".join(picks) if picks else "无符合条件股票")
 
 
 if __name__ == "__main__":
