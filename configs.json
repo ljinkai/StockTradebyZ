@@ -3,7 +3,7 @@
     {
       "class": "BBIKDJSelector",
       "alias": "少妇战法",
-      "activate": false,
+      "activate": true,
       "params": {
         "j_threshold": 15,
         "bbi_min_window": 20,
@@ -76,7 +76,7 @@
     {
       "class": "BigBullishVolumeSelector",
       "alias": "暴力K战法",
-      "activate": true,
+      "activate": false,
       "params": {
         "up_pct_threshold": 0.06,
         "upper_wick_pct_max": 0.02,            
