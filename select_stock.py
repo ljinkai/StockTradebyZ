@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 import pandas as pd
+from result_storage import ResultStorage, StockSelectionResult as StorageResult
 
 # ---------- 日志 ----------
 logging.basicConfig(
@@ -83,6 +84,9 @@ def main():
     p.add_argument("--config", default="./configs.json", help="Selector 配置文件")
     p.add_argument("--date", help="交易日 YYYY-MM-DD；缺省=数据最新日期")
     p.add_argument("--tickers", default="all", help="'all' 或逗号分隔股票代码列表")
+    p.add_argument("--save-result", action="store_true", default=True, help="保存选股结果到文件（默认启用）")
+    p.add_argument("--no-save-result", dest="save_result", action="store_false", help="不保存选股结果")
+    p.add_argument("--result-dir", default="./result", help="结果存储目录，默认 ./result")
     args = p.parse_args()
 
     # --- 加载行情 ---
@@ -116,6 +120,12 @@ def main():
     # --- 加载 Selector 配置 ---
     selector_cfgs = load_config(Path(args.config))
 
+    # --- 初始化结果存储 ---
+    storage = None
+    if args.save_result:
+        storage = ResultStorage(Path(args.result_dir))
+        logger.info("结果将保存到: %s", storage.result_dir.absolute())
+
     # --- 逐个 Selector 运行 ---
     for cfg in selector_cfgs:
         if cfg.get("activate", True) is False:
@@ -128,14 +138,18 @@ def main():
 
         picks = selector.select(trade_date, data)
 
+        # 获取评分（如果有）
+        scores = None
+        if hasattr(selector, "last_scores") and isinstance(getattr(selector, "last_scores"), dict):
+            scores = getattr(selector, "last_scores")
+
         # 将结果写入日志，同时输出到控制台
         logger.info("")
         logger.info("============== 选股结果 [%s] ==============", alias)
         logger.info("交易日: %s", trade_date.date())
         logger.info("符合条件股票数: %d", len(picks))
         # 若选择器提供相似度分数，则打印分数
-        if hasattr(selector, "last_scores") and isinstance(getattr(selector, "last_scores"), dict):
-            scores = getattr(selector, "last_scores")
+        if scores:
             if picks:
                 detailed = [f"{code}({scores.get(code, float('nan')):.4f})" for code in picks]
                 logger.info("%s", ", ".join(detailed))
@@ -143,6 +157,21 @@ def main():
                 logger.info("无符合条件股票")
         else:
             logger.info("%s", ", ".join(picks) if picks else "无符合条件股票")
+
+        # 保存结果到文件
+        if storage:
+            try:
+                result = StorageResult(
+                    selector_name=cfg.get("class", "Unknown"),
+                    alias=alias,
+                    trade_date=trade_date.strftime("%Y-%m-%d"),
+                    selected_stocks=picks,
+                    scores=scores,
+                    count=len(picks),
+                )
+                storage.save_result(result)
+            except Exception as e:
+                logger.warning("保存选股结果失败: %s", e)
 
 
 if __name__ == "__main__":

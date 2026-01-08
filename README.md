@@ -57,7 +57,8 @@
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`fetch_kline.py`**  | 仅使用 **Tushare** 抓取 **A 股日线（前复权 qfq）**。**股票池从 `stocklist.csv` 读取**，支持排除 **创业板/科创板/北交所**，并发抓取，**每次运行全量覆盖保存**（不做增量合并），输出 CSV 列：`date, open, close, high, low, volume`。 |
 | **`select_stock.py`** | 加载 `./data` 目录内 CSV 行情与 `configs.json`，批量执行选择器（Selector）并输出结果到控制台与 `select_results.log`。                                                                                           |
-| **`Selector.py`**     | 实现各类战法（选择器）。**已删除 TePu 战法**；现包含 5 个策略，统一纳入“当日过滤 & 知行约束”。                                                                                                                           |
+| **`Selector.py`**     | 实现各类战法（选择器）。**已删除 TePu 战法**；现包含 5 个策略，统一纳入"当日过滤 & 知行约束"。                                                                                                                           |
+| **`api_server.py`**   | 提供 RESTful API 服务，将选股功能封装为 HTTP 接口，支持通过 API 调用选股功能。详见 [API 文档](API_DOCS.md)。                                                                                                                           |
 
 ---
 
@@ -109,6 +110,8 @@ python fetch_kline.py \
 
 ### 运行选股
 
+**方式1：命令行方式**
+
 ```bash
 python select_stock.py \
   --data-dir ./data \
@@ -117,6 +120,37 @@ python select_stock.py \
 ```
 
 > `--date` 可省略，默认取数据中的最后交易日。
+
+**方式2：API 服务方式**
+
+启动 API 服务：
+
+```bash
+# 使用启动脚本
+./start_api.sh
+
+# 或直接运行
+python api_server.py
+
+# 或使用 uvicorn
+uvicorn api_server:app --host 0.0.0.0 --port 8000
+```
+
+服务启动后，访问 http://localhost:8000/docs 查看 API 文档。
+
+通过 API 调用选股：
+
+```bash
+# GET 方式
+curl "http://localhost:8000/select?date=2025-01-15"
+
+# POST 方式
+curl -X POST http://localhost:8000/select \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2025-01-15"}'
+```
+
+更多 API 使用说明请参考 [API_DOCS.md](API_DOCS.md)。
 
 ---
 
@@ -368,12 +402,15 @@ python select_stock.py \
 .
 ├── configs.json             # 选择器参数（示例见上文）
 ├── fetch_kline.py           # 从 stocklist.csv 读取并抓取 Tushare 日线（qfq）
-├── select_stock.py          # 批量选股入口
+├── select_stock.py          # 批量选股入口（命令行方式）
+├── api_server.py            # API 服务（HTTP 接口方式）
 ├── Selector.py              # 策略实现（含公共指标/过滤）
 ├── stocklist.csv            # 你的股票池（示例列：ts_code/symbol/...）
 ├── data/                    # 行情 CSV 输出目录
 ├── fetch.log                # 抓取日志
-└── select_results.log       # 选股日志
+├── select_results.log       # 选股日志
+├── API_DOCS.md             # API 使用文档
+└── start_api.sh            # API 服务启动脚本
 ```
 
 ---

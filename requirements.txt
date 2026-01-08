@@ -2,3 +2,6 @@ pandas==2.3.0
 tqdm==4.66.4
 tushare==1.4.21
 scipy==1.14.1
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2

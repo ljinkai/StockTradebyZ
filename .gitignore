@@ -2,6 +2,9 @@
 data/
 *.csv
 
+# 选股结果目录
+result/
+
 # Python 缓存
 __pycache__/
 *.py[cod]
