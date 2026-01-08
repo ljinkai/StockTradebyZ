@@ -74,19 +74,18 @@
       }
     },
     {
-      "class": "PatternSimilaritySelector",
-      "alias": "形体相似选股",
+      "class": "BigBullishVolumeSelector",
+      "alias": "暴力K战法",
       "activate": true,
       "params": {
-        "reference_code": "600095",
-        "window": 30,
-        "min_corr": 0.30,
-        "use_candle_shape": true,
-        "require_zx_today": false,
-        "also_filter_day": false,
-        "reference_start": "2025-07-02",
-        "reference_end": "2025-09-22"
+        "up_pct_threshold": 0.06,
+        "upper_wick_pct_max": 0.02,            
+        "require_bullish_close": true,
+        "close_lt_zxdq_mult": 1.15,
+        "vol_lookback_n": 20,
+        "vol_multiple": 2.5
       }
     }
   ]
 }
+

@@ -833,164 +833,142 @@ class MA60CrossVolumeWaveSelector:
                 picks.append(code)
         return picks
 
-
-class PatternSimilaritySelector:
-    """
-    形体相似选股器（基于参考股票近 N 日的形态相似度）
-
-    思路
-    ----
-    - 以参考股票 `reference_code` 的最近 `window` 日 K 线，构造形体向量
-      （默认使用标准化收盘收益率，也可组合蜡烛实体/影线比例）。
-    - 对候选股票提取同长度向量，计算与参考向量的皮尔逊相关系数。
-    - 当相似度 ≥ `min_corr` 时判为匹配；并结合“统一当日过滤 + 知行约束”。
-
-    参数
-    ----
-    - reference_code: 参考股票代码，必须存在于 `data` 中
-    - window: 对比窗口长度（交易日数）
-    - min_corr: 最低相关阈值（[-1,1]），通常 0.7~0.9
-    - use_candle_shape: 是否叠加蜡烛形体特征（实体/上影/下影，zscore 后与收益拼接）
-    - require_zx_today: 是否要求当日满足知行约束（收盘>长期线 且 短期线>长期线）
-    - also_filter_day: 是否启用统一当日过滤（振幅/涨跌幅阈值）
-    """
+class BigBullishVolumeSelector:    
 
     def __init__(
         self,
         *,
-        reference_code: str,
-        window: int = 30,
-        min_corr: float = 0.8,
-        use_candle_shape: bool = True,
-        require_zx_today: bool = True,
-        also_filter_day: bool = True,
-        reference_start: Optional[str] = None,
-        reference_end: Optional[str] = None,
+        up_pct_threshold: float = 0.04,       # 长阳阈值：例如 0.04 表示涨幅>4%
+        upper_wick_pct_max: float = 0.5,      # 上影线比例上限（口径由 wick_mode 决定）
+        vol_lookback_n: int = 20,             # 放量比较的历史天数 n
+        vol_multiple: float = 1.5,            # 放量倍数阈值
+        min_history: int | None = None,       # 最少历史长度（默认自动 = vol_lookback_n + 2）
+        require_bullish_close: bool = True,   # 可选：要求当日收阳（close >= open）
+        ignore_zero_volume: bool = True,      # 计算均量时是否忽略 volume=0
+        close_lt_zxdq_mult: float = 1.0       # 例如 1.0 表示 close < zxdq；1.02 表示 close < 1.02*zxdq        
     ) -> None:
-        if window < 5:
-            raise ValueError("window 应 ≥ 5")
-        if not (-1.0 <= min_corr <= 1.0):
-            raise ValueError("min_corr 应位于 [-1, 1]")
-        self.reference_code = reference_code
-        self.window = window
-        self.min_corr = min_corr
-        self.use_candle_shape = use_candle_shape
-        self.require_zx_today = require_zx_today
-        self.also_filter_day = also_filter_day
-        self.reference_start = reference_start
-        self.reference_end = reference_end
+        if up_pct_threshold <= 0:
+            raise ValueError("up_pct_threshold 应 > 0")
+        if upper_wick_pct_max < 0:
+            raise ValueError("upper_wick_pct_max 应 >= 0")
+        if vol_lookback_n < 1:
+            raise ValueError("vol_lookback_n 应 >= 1")
+        if vol_multiple <= 0:
+            raise ValueError("vol_multiple 应 > 0")
+        if close_lt_zxdq_mult <= 0:
+            raise ValueError("close_lt_zxdq_mult 应 > 0")    
+
+        self.up_pct_threshold = float(up_pct_threshold)
+        self.upper_wick_pct_max = float(upper_wick_pct_max)
+        self.vol_lookback_n = int(vol_lookback_n)
+        self.vol_multiple = float(vol_multiple)
+        self.require_bullish_close = bool(require_bullish_close)
+        self.ignore_zero_volume = bool(ignore_zero_volume)
+        self.close_lt_zxdq_mult = float(close_lt_zxdq_mult)
+        self.eps = float(1e-12)        
+        self.min_history = int(min_history) if min_history is not None else (self.vol_lookback_n + 2)
+        
 
     @staticmethod
-    def _zscore(x: np.ndarray) -> np.ndarray:
-        x = x.astype(float)
-        mu = np.nanmean(x)
-        sigma = np.nanstd(x)
-        if not np.isfinite(sigma) or sigma == 0:
-            return np.zeros_like(x, dtype=float)
-        return (x - mu) / sigma
-
-    @classmethod
-    def _shape_vector(cls, df: pd.DataFrame, n: int, use_candle_shape: bool) -> np.ndarray:
-        seg = df.tail(n).copy()
-        if len(seg) < n:
-            return np.array([], dtype=float)
-        seg = seg.sort_values("date")
-
-        close = seg["close"].to_numpy(dtype=float)
-        # 收益率序列（长度 n-1），再补齐到 n（尾部补 0）
-        ret = np.diff(close) / np.where(close[:-1] != 0, close[:-1], np.nan)
-        ret = np.nan_to_num(ret, nan=0.0)
-        ret = np.concatenate([ret, [0.0]])
-        feats = [cls._zscore(ret)]
-
-        if use_candle_shape:
-            o = seg["open"].to_numpy(dtype=float)
-            h = seg["high"].to_numpy(dtype=float)
-            l = seg["low"].to_numpy(dtype=float)
-            c = close
-
-            body = np.abs(c - o)
-            upper = np.maximum(h - np.maximum(c, o), 0.0)
-            lower = np.maximum(np.minimum(c, o) - l, 0.0)
-
-            # 比例特征，防止价格量级影响
-            denom = np.where(l > 0, l, 1.0)
-            body_r = np.nan_to_num(body / denom, nan=0.0)
-            up_r = np.nan_to_num(upper / denom, nan=0.0)
-            low_r = np.nan_to_num(lower / denom, nan=0.0)
-
-            feats += [cls._zscore(body_r), cls._zscore(up_r), cls._zscore(low_r)]
-
-        vec = np.concatenate(feats, axis=0)
-        # print(f"参考股票的形态向量: {vec}")
-        return vec
-
-    @staticmethod
-    def _corr(a: np.ndarray, b: np.ndarray) -> float:
-        if a.size == 0 or b.size == 0 or a.size != b.size:
+    def _to_float(x) -> float:
+        try:
+            return float(x)
+        except Exception:
             return float("nan")
-        # 皮尔逊相关
-        va = a - a.mean()
-        vb = b - b.mean()
-        denom = np.linalg.norm(va) * np.linalg.norm(vb)
-        if denom == 0:
-            return 0.0
-        return float(np.dot(va, vb) / denom)
+
+    def _upper_wick_pct(self, o: float, h: float, c: float) -> float:
+        return (h - max(o, c)) / max(o, c)
+
+    def _passes_filters(self, hist: pd.DataFrame) -> bool:
+        if hist is None or hist.empty:
+            return False
+
+        hist = hist.sort_values("date").copy()
+
+        if len(hist) < self.min_history:
+            return False
+        if len(hist) < (self.vol_lookback_n + 2):
+            return False  # 至少需要：T、T-1、以及 T-1 往前 n 天
+
+        today = hist.iloc[-1]
+        prev  = hist.iloc[-2]
+
+        oT = self._to_float(today.get("open"))
+        hT = self._to_float(today.get("high"))
+        lT = self._to_float(today.get("low"))
+        cT = self._to_float(today.get("close"))
+        vT = self._to_float(today.get("volume"))
+
+        cP = self._to_float(prev.get("close"))
+
+        # 基础合法性
+        if not (np.isfinite(oT) and np.isfinite(hT) and np.isfinite(lT) and np.isfinite(cT) and np.isfinite(vT) and np.isfinite(cP)):
+            return False
+        if cP <= 0 or cT <= 0:
+            return False
+        if hT < max(oT, cT) or lT > min(oT, cT):
+            # K线数据异常（不一定必需，但建议保持严谨）
+            return False
+
+        # (可选) 要求当日收阳
+        if self.require_bullish_close and not (cT >= oT):
+            return False
+
+        # 1) 长阳：涨幅 > 阈值
+        pct_chg = cT / cP - 1.0
+        if pct_chg <= self.up_pct_threshold:
+            return False
+
+        # 2) 上影线百分比 < 阈值
+        wick_pct = self._upper_wick_pct(oT, hT, cT)
+        if not np.isfinite(wick_pct):
+            return False
+        if wick_pct >= self.upper_wick_pct_max:
+            return False
+
+        # 3) 放量：当日成交量 > 前 n 日均量 * 倍数
+        vol_hist = hist["volume"].iloc[-(self.vol_lookback_n + 1):-1].astype(float)  # T-n ... T-1
+        if self.ignore_zero_volume:
+            vol_hist = vol_hist.replace(0, np.nan).dropna()
+
+        if len(vol_hist) < max(3, int(self.vol_lookback_n * 0.6)):
+            # 有效样本过少就不做判断（你也可以改成直接 False 或严格要求=vol_lookback_n）
+            return False
+
+        avg_vol = float(vol_hist.mean())
+        if not (np.isfinite(avg_vol) and avg_vol > 0):
+            return False
+
+        if vT < self.vol_multiple * avg_vol:
+            return False
+        
+        # 4) 偏离短线小于阈值
+        try:
+            zxdq, _ = compute_zx_lines(hist)
+            zxdq_T = float(zxdq.iloc[-1])
+        except Exception:
+            zxdq_T = float("nan")
+
+        if not np.isfinite(zxdq_T):
+            return False
+        else:
+            if not (cT < zxdq_T * self.close_lt_zxdq_mult):
+                return False
+
+        return True
 
     def select(self, date: pd.Timestamp, data: Dict[str, pd.DataFrame]) -> List[str]:
-        if self.reference_code not in data:
-            return []
+        picks: List[str] = []
+        need_len = max(self.min_history, self.vol_lookback_n + 2)
 
-        ref_df = data[self.reference_code].copy()
-        # 若指定了参考日期区间，则严格按区间截取参考形态；否则使用最近 window 日
-        if self.reference_start and self.reference_end:
-            try:
-                start_dt = pd.to_datetime(self.reference_start)
-                end_dt = pd.to_datetime(self.reference_end)
-            except Exception:
-                return []
-            mask = (ref_df["date"] >= start_dt) & (ref_df["date"] <= end_dt)
-            ref_hist = ref_df.loc[mask].sort_values("date")
-            n_days = len(ref_hist)
-            if n_days < 5:
-                return []
-            ref_vec = self._shape_vector(ref_hist, n_days, self.use_candle_shape)
-            ref_len = n_days
-        else:
-            ref_hist = ref_df[ref_df["date"] <= date]
-            if len(ref_hist) < self.window:
-                return []
-            ref_vec = self._shape_vector(ref_hist, self.window, self.use_candle_shape)
-            ref_len = self.window
-        if ref_vec.size == 0:
-            return []
-
-        scored: List[tuple[str, float]] = []
         for code, df in data.items():
-            if code == self.reference_code:
+            if df is None or df.empty:
                 continue
-            hist = df[df["date"] <= date]
-            if len(hist) < ref_len:
+            hist = df[df["date"] <= date].tail(need_len)
+            if len(hist) < need_len:
                 continue
-            # 当日统一过滤
-            if self.also_filter_day and not passes_day_constraints_today(hist):
-                continue
-            # 可选的知行当日约束（用户可在配置中关闭）
-            if self.require_zx_today:
-                if not zx_condition_at_positions(
-                    hist, require_close_gt_long=True, require_short_gt_long=True, pos=None
-                ):
-                    continue
-            vec = self._shape_vector(hist, ref_len, self.use_candle_shape)
-            if vec.size != ref_vec.size:
-                continue
-            corr = self._corr(ref_vec, vec)
-            if np.isnan(corr):
-                continue
-            if corr >= self.min_corr:
-                scored.append((code, float(corr)))
+            if self._passes_filters(hist):
+                picks.append(code)
 
-        # 降序排序并缓存最近一次的分数
-        scored.sort(key=lambda x: x[1], reverse=True)
-        self.last_scores = {code: score for code, score in scored}
-        return [code for code, _ in scored]
+        return picks
+
